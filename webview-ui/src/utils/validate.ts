@@ -157,6 +157,13 @@ function validateModelsAndKeysProvided(apiConfiguration: ProviderSettings): stri
 			}
 			break
 		case "fordllm":
+			console.log("Validating fordllm provider")
+			console.log("fordAiClientId:", apiConfiguration.fordAiClientId)
+			console.log("fordAiClientSecret:", apiConfiguration.fordAiClientSecret ? "[REDACTED]" : undefined)
+			console.log("fordAiTokenUrl:", apiConfiguration.fordAiTokenUrl)
+			console.log("fordAiChatUrl:", apiConfiguration.fordAiChatUrl)
+			console.log("apiModelId:", apiConfiguration.apiModelId)
+
 			if (!apiConfiguration.fordAiClientId || !apiConfiguration.fordAiClientSecret) {
 				return "Please provide Client ID and Client Secret"
 			}
