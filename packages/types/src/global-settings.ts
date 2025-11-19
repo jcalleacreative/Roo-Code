@@ -244,6 +244,8 @@ export const SECRET_STATE_KEYS = [
 	"zaiApiKey",
 	"fireworksApiKey",
 	"featherlessApiKey",
+	"fordAiClientId",
+	"fordAiClientSecret",
 	"ioIntelligenceApiKey",
 	"vercelAiGatewayApiKey",
 ] as const
