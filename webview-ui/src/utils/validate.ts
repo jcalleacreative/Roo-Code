@@ -156,6 +156,14 @@ function validateModelsAndKeysProvided(apiConfiguration: ProviderSettings): stri
 				return i18next.t("settings:validation.apiKey")
 			}
 			break
+		case "fordllm":
+			if (!apiConfiguration.fordAiClientId || !apiConfiguration.fordAiClientSecret) {
+				return "Please provide Client ID and Client Secret"
+			}
+			if (!apiConfiguration.fordAiTokenUrl || !apiConfiguration.fordAiChatUrl) {
+				return "Please provide Token URL and Chat API URL"
+			}
+			break
 	}
 
 	return undefined
