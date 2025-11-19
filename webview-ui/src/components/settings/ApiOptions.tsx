@@ -38,6 +38,7 @@ import {
 	vercelAiGatewayDefaultModelId,
 	deepInfraDefaultModelId,
 	minimaxDefaultModelId,
+	fordllmDefaultModelId,
 	type ToolProtocol,
 	TOOL_PROTOCOL,
 } from "@roo-code/types"
@@ -97,6 +98,7 @@ import {
 	ZAi,
 	Fireworks,
 	Featherless,
+	FordLLM,
 	VercelAiGateway,
 	DeepInfra,
 	MiniMax,
@@ -366,6 +368,7 @@ const ApiOptions = ({
 				},
 				fireworks: { field: "apiModelId", default: fireworksDefaultModelId },
 				featherless: { field: "apiModelId", default: featherlessDefaultModelId },
+				fordllm: { field: "apiModelId", default: fordllmDefaultModelId },
 				"io-intelligence": { field: "ioIntelligenceModelId", default: ioIntelligenceDefaultModelId },
 				roo: { field: "apiModelId", default: rooDefaultModelId },
 				"vercel-ai-gateway": { field: "vercelAiGatewayModelId", default: vercelAiGatewayDefaultModelId },
@@ -714,6 +717,10 @@ const ApiOptions = ({
 
 			{selectedProvider === "featherless" && (
 				<Featherless apiConfiguration={apiConfiguration} setApiConfigurationField={setApiConfigurationField} />
+			)}
+
+			{selectedProvider === "fordllm" && (
+				<FordLLM apiConfiguration={apiConfiguration} setApiConfigurationField={setApiConfigurationField} />
 			)}
 
 			{selectedProviderModels.length > 0 && (

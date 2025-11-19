@@ -21,6 +21,8 @@ echo "" | tee -a "$LOG_FILE"
 # Check source files
 echo "=== Source Files Check ===" | tee -a "$LOG_FILE"
 echo "Checking for fordllm source files..." | tee -a "$LOG_FILE"
+
+# Backend files
 if [ -f "packages/types/src/providers/fordllm.ts" ]; then
     echo "✓ fordllm.ts exists" | tee -a "$LOG_FILE"
     echo "File size: $(wc -c < packages/types/src/providers/fordllm.ts) bytes" | tee -a "$LOG_FILE"
@@ -33,6 +35,42 @@ grep -n "fordllm" packages/types/src/provider-settings.ts | head -5 | tee -a "$L
 
 echo "Checking providers/index.ts for fordllm export..." | tee -a "$LOG_FILE"
 grep -n "fordllm" packages/types/src/providers/index.ts | head -3 | tee -a "$LOG_FILE"
+
+# UI files
+echo "" | tee -a "$LOG_FILE"
+echo "Checking UI component files..." | tee -a "$LOG_FILE"
+
+if [ -f "webview-ui/src/components/settings/providers/FordLLM.tsx" ]; then
+    echo "✓ FordLLM.tsx component exists" | tee -a "$LOG_FILE"
+else
+    echo "✗ FordLLM.tsx component NOT FOUND" | tee -a "$LOG_FILE"
+fi
+
+echo "Checking constants.ts for fordllm..." | tee -a "$LOG_FILE"
+FORDLLM_CONSTANTS=$(grep -n "fordllm" webview-ui/src/components/settings/constants.ts | wc -l)
+if [ $FORDLLM_CONSTANTS -gt 0 ]; then
+    echo "✓ fordllm found in constants.ts ($FORDLLM_CONSTANTS references)" | tee -a "$LOG_FILE"
+    grep -n "fordllm" webview-ui/src/components/settings/constants.ts | tee -a "$LOG_FILE"
+else
+    echo "✗ fordllm NOT found in constants.ts" | tee -a "$LOG_FILE"
+fi
+
+echo "Checking ApiOptions.tsx for FordLLM import and usage..." | tee -a "$LOG_FILE"
+FORDLLM_APIOPTIONS=$(grep -n "fordllm\|FordLLM" webview-ui/src/components/settings/ApiOptions.tsx | wc -l)
+if [ $FORDLLM_APIOPTIONS -gt 0 ]; then
+    echo "✓ FordLLM found in ApiOptions.tsx ($FORDLLM_APIOPTIONS references)" | tee -a "$LOG_FILE"
+    grep -n "fordllm\|FordLLM" webview-ui/src/components/settings/ApiOptions.tsx | head -10 | tee -a "$LOG_FILE"
+else
+    echo "✗ FordLLM NOT found in ApiOptions.tsx" | tee -a "$LOG_FILE"
+fi
+
+echo "Checking providers/index.ts for FordLLM export..." | tee -a "$LOG_FILE"
+if grep -q "FordLLM" webview-ui/src/components/settings/providers/index.ts; then
+    echo "✓ FordLLM exported from providers/index.ts" | tee -a "$LOG_FILE"
+else
+    echo "✗ FordLLM NOT exported from providers/index.ts" | tee -a "$LOG_FILE"
+fi
+
 echo "" | tee -a "$LOG_FILE"
 
 # Clean build
