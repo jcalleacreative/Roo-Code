@@ -62,11 +62,20 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 	 * Caches the token and reuses it until expiry.
 	 */
 	private async getFordAccessToken(): Promise<string> {
+		console.log("[FordLLM] getFordAccessToken: Starting OAuth token acquisition")
+
 		// Return cached token if still valid (with 5min buffer)
 		const now = Date.now() / 1000
 		if (this.accessToken && this.tokenExpiresAt > now + 300) {
+			console.log(
+				"[FordLLM] getFordAccessToken: Using cached token (expires in",
+				Math.round(this.tokenExpiresAt - now),
+				"seconds)",
+			)
 			return this.accessToken
 		}
+
+		console.log("[FordLLM] getFordAccessToken: Cached token expired or not present, requesting new token")
 
 		// Get configuration from VS Code settings or env vars
 		const clientId = this.options.fordAiClientId || process.env.FORDLLM_CLIENT_ID || process.env.FORD_AI_CLIENT_ID
@@ -74,6 +83,11 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 			this.options.fordAiClientSecret || process.env.FORDLLM_CLIENT_SECRET || process.env.FORD_AI_CLIENT_SECRET
 		const tokenUrl = this.options.fordAiTokenUrl || FORD_DEFAULT_TOKEN_URL
 		const scope = this.options.fordAiScope || FORD_DEFAULT_SCOPE
+
+		console.log("[FordLLM] getFordAccessToken: Token URL:", tokenUrl)
+		console.log("[FordLLM] getFordAccessToken: Client ID:", clientId ? `${clientId.substring(0, 8)}...` : "MISSING")
+		console.log("[FordLLM] getFordAccessToken: Client Secret:", clientSecret ? "***SET***" : "MISSING")
+		console.log("[FordLLM] getFordAccessToken: Scope:", scope)
 
 		if (!clientId || !clientSecret) {
 			throw new Error(
@@ -90,6 +104,7 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 		})
 
 		try {
+			console.log("[FordLLM] getFordAccessToken: Sending token request to", tokenUrl)
 			const response = await fetch(tokenUrl, {
 				method: "POST",
 				headers: {
@@ -98,8 +113,11 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 				body: params.toString(),
 			})
 
+			console.log("[FordLLM] getFordAccessToken: Token response status:", response.status, response.statusText)
+
 			if (!response.ok) {
 				const errorText = await response.text()
+				console.error("[FordLLM] getFordAccessToken: Token request failed with error:", errorText)
 				throw new Error(
 					`Ford AI: Failed to obtain access token (${response.status} ${response.statusText}). Check clientId/clientSecret/scope. Error: ${errorText}`,
 				)
@@ -108,6 +126,7 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 			const data: FordTokenResponse = await response.json()
 
 			if (!data.access_token) {
+				console.error("[FordLLM] getFordAccessToken: No access_token in response")
 				throw new Error("Ford AI: No access_token in response from token endpoint.")
 			}
 
@@ -115,8 +134,17 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 			this.accessToken = data.access_token
 			this.tokenExpiresAt = now + data.expires_in
 
+			console.log(
+				"[FordLLM] getFordAccessToken: Successfully obtained token (length:",
+				this.accessToken.length,
+				", expires in",
+				data.expires_in,
+				"seconds)",
+			)
+
 			return this.accessToken
 		} catch (error) {
+			console.error("[FordLLM] getFordAccessToken: Exception during token request:", error)
 			if (error instanceof Error) {
 				throw new Error(`Ford AI: OAuth2 token request failed: ${error.message}`)
 			}
@@ -131,16 +159,26 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 		systemPrompt: string,
 		messages: Anthropic.Messages.MessageParam[],
 	): Promise<FordChatCompletionResponse> {
+		console.log("[FordLLM] callFordAi: Starting chat API call")
+		console.log("[FordLLM] callFordAi: System prompt length:", systemPrompt.length)
+		console.log("[FordLLM] callFordAi: Messages count:", messages.length)
+
 		const accessToken = await this.getFordAccessToken()
+		console.log("[FordLLM] callFordAi: Access token obtained, length:", accessToken.length)
 
 		const chatUrl = this.options.fordAiChatUrl || FORD_DEFAULT_CHAT_URL
 		const modelName = this.options.fordAiModel || FORD_DEFAULT_MODEL
+
+		console.log("[FordLLM] callFordAi: Chat URL:", chatUrl)
+		console.log("[FordLLM] callFordAi: Model:", modelName)
 
 		// Convert Anthropic messages to OpenAI format
 		const openAiMessages = [
 			{ role: "system" as const, content: systemPrompt },
 			...convertToOpenAiMessages(messages),
 		]
+
+		console.log("[FordLLM] callFordAi: Converted to", openAiMessages.length, "OpenAI messages")
 
 		// Context size guardrail
 		const requestBody = {
@@ -149,6 +187,8 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 		}
 		const requestSize = JSON.stringify(requestBody).length
 
+		console.log("[FordLLM] callFordAi: Request body size:", requestSize, "bytes (max:", MAX_CONTEXT_SIZE_BYTES, ")")
+
 		if (requestSize > MAX_CONTEXT_SIZE_BYTES) {
 			throw new Error(
 				`Ford AI: Context too large (${Math.round(requestSize / 1024)}KB). Try fewer files or a smaller prompt. Max: ${Math.round(MAX_CONTEXT_SIZE_BYTES / 1024)}KB.`,
@@ -156,6 +196,9 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 		}
 
 		try {
+			console.log("[FordLLM] callFordAi: Sending POST request to", chatUrl)
+			console.log("[FordLLM] callFordAi: Authorization header: Bearer [token length:", accessToken.length, "]")
+
 			const response = await fetch(chatUrl, {
 				method: "POST",
 				headers: {
@@ -165,8 +208,12 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 				body: JSON.stringify(requestBody),
 			})
 
+			console.log("[FordLLM] callFordAi: Response received - Status:", response.status, response.statusText)
+			console.log("[FordLLM] callFordAi: Response OK:", response.ok)
+
 			if (!response.ok) {
 				const errorText = await response.text()
+				console.error("[FordLLM] callFordAi: Error response body:", errorText)
 
 				let errorMessage = `Ford AI: Chat API request failed (${response.status} ${response.statusText}).`
 
@@ -185,8 +232,21 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 			}
 
 			const data: FordChatCompletionResponse = await response.json()
+			console.log("[FordLLM] callFordAi: Successfully parsed response")
+			console.log("[FordLLM] callFordAi: Response has", data.choices?.length || 0, "choices")
+			console.log(
+				"[FordLLM] callFordAi: First choice content length:",
+				data.choices?.[0]?.message?.content?.length || 0,
+			)
+
 			return data
 		} catch (error) {
+			console.error("[FordLLM] callFordAi: Exception caught:", error)
+			console.error("[FordLLM] callFordAi: Error type:", error instanceof Error ? "Error" : typeof error)
+			console.error(
+				"[FordLLM] callFordAi: Error message:",
+				error instanceof Error ? error.message : String(error),
+			)
 			if (error instanceof Error) {
 				throw new Error(`Ford AI: Chat request failed: ${error.message}`)
 			}
@@ -200,6 +260,8 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 		metadata?: ApiHandlerCreateMessageMetadata,
 	): ApiStream {
 		try {
+			console.log("[FordLLM] createMessage: Called with", messages.length, "messages")
+
 			// Call Ford AI (non-streaming)
 			const response = await this.callFordAi(systemPrompt, messages)
 
@@ -207,8 +269,11 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 			const assistantMessage = response.choices?.[0]?.message?.content
 
 			if (!assistantMessage) {
+				console.error("[FordLLM] createMessage: No assistant message in response")
 				throw new Error("Ford AI: No message content in response.")
 			}
+
+			console.log("[FordLLM] createMessage: Yielding text response (length:", assistantMessage.length, ")")
 
 			// Yield the full text as a single chunk
 			yield {
@@ -218,6 +283,12 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 
 			// Yield usage information if available
 			if (response.usage) {
+				console.log(
+					"[FordLLM] createMessage: Yielding usage info - input:",
+					response.usage.prompt_tokens,
+					"output:",
+					response.usage.completion_tokens,
+				)
 				yield {
 					type: "usage",
 					inputTokens: response.usage.prompt_tokens || 0,
@@ -225,8 +296,12 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 					totalCost: 0, // Ford API doesn't provide cost info
 				}
 			}
+
+			console.log("[FordLLM] createMessage: Completed successfully")
 		} catch (error) {
+			console.error("[FordLLM] createMessage: Error occurred:", error)
 			const errorMessage = error instanceof Error ? error.message : String(error)
+			console.error("[FordLLM] createMessage: Yielding error:", errorMessage)
 			yield {
 				type: "error",
 				error: errorMessage,
