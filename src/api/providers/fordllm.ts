@@ -131,23 +131,16 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 		systemPrompt: string,
 		messages: Anthropic.Messages.MessageParam[],
 	): Promise<FordChatCompletionResponse> {
-		console.log("[FordLLM] callFordAi - Getting access token")
 		const accessToken = await this.getFordAccessToken()
-		console.log("[FordLLM] callFordAi - Access token obtained:", accessToken ? "✓" : "✗")
 
 		const chatUrl = this.options.fordAiChatUrl || FORD_DEFAULT_CHAT_URL
 		const modelName = this.options.fordAiModel || FORD_DEFAULT_MODEL
-
-		console.log("[FordLLM] callFordAi - Chat URL:", chatUrl)
-		console.log("[FordLLM] callFordAi - Model:", modelName)
 
 		// Convert Anthropic messages to OpenAI format
 		const openAiMessages = [
 			{ role: "system" as const, content: systemPrompt },
 			...convertToOpenAiMessages(messages),
 		]
-
-		console.log("[FordLLM] callFordAi - Converted messages:", JSON.stringify(openAiMessages, null, 2))
 
 		// Context size guardrail
 		const requestBody = {
@@ -156,8 +149,6 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 		}
 		const requestSize = JSON.stringify(requestBody).length
 
-		console.log("[FordLLM] callFordAi - Request size:", requestSize, "bytes")
-
 		if (requestSize > MAX_CONTEXT_SIZE_BYTES) {
 			throw new Error(
 				`Ford AI: Context too large (${Math.round(requestSize / 1024)}KB). Try fewer files or a smaller prompt. Max: ${Math.round(MAX_CONTEXT_SIZE_BYTES / 1024)}KB.`,
@@ -165,22 +156,17 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 		}
 
 		try {
-			console.log("[FordLLM] callFordAi - Sending request to:", chatUrl)
 			const response = await fetch(chatUrl, {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
-					Authorization: `Bearer ${accessToken.substring(0, 20)}...`,
+					Authorization: `Bearer ${accessToken}`,
 				},
 				body: JSON.stringify(requestBody),
 			})
 
-			console.log("[FordLLM] callFordAi - Response status:", response.status, response.statusText)
-			console.log("[FordLLM] callFordAi - Response ok:", response.ok)
-
 			if (!response.ok) {
 				const errorText = await response.text()
-				console.error("[FordLLM] callFordAi - Error response body:", errorText)
 
 				let errorMessage = `Ford AI: Chat API request failed (${response.status} ${response.statusText}).`
 
@@ -198,15 +184,9 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 				throw new Error(errorMessage)
 			}
 
-			const responseText = await response.text()
-			console.log("[FordLLM] callFordAi - Raw response:", responseText)
-
-			const data: FordChatCompletionResponse = JSON.parse(responseText)
-			console.log("[FordLLM] callFordAi - Parsed response:", JSON.stringify(data, null, 2))
-
+			const data: FordChatCompletionResponse = await response.json()
 			return data
 		} catch (error) {
-			console.error("[FordLLM] callFordAi - Exception:", error)
 			if (error instanceof Error) {
 				throw new Error(`Ford AI: Chat request failed: ${error.message}`)
 			}
@@ -220,29 +200,13 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 		metadata?: ApiHandlerCreateMessageMetadata,
 	): ApiStream {
 		try {
-			console.log("[FordLLM] Starting API call")
-			console.log("[FordLLM] System prompt length:", systemPrompt.length)
-			console.log("[FordLLM] Messages count:", messages.length)
-
 			// Call Ford AI (non-streaming)
 			const response = await this.callFordAi(systemPrompt, messages)
-
-			console.log("[FordLLM] Received response:", JSON.stringify(response, null, 2))
-			console.log("[FordLLM] Response type:", typeof response)
-			console.log("[FordLLM] Response keys:", Object.keys(response || {}))
-			console.log("[FordLLM] Choices:", response.choices)
-			console.log("[FordLLM] First choice:", response.choices?.[0])
 
 			// Extract the assistant's reply
 			const assistantMessage = response.choices?.[0]?.message?.content
 
-			console.log("[FordLLM] Assistant message:", assistantMessage)
-			console.log("[FordLLM] Assistant message type:", typeof assistantMessage)
-			console.log("[FordLLM] Assistant message length:", assistantMessage?.length)
-
 			if (!assistantMessage) {
-				console.error("[FordLLM] No message content in response!")
-				console.error("[FordLLM] Full response:", JSON.stringify(response, null, 2))
 				throw new Error("Ford AI: No message content in response.")
 			}
 
@@ -261,12 +225,8 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 					totalCost: 0, // Ford API doesn't provide cost info
 				}
 			}
-
-			console.log("[FordLLM] Message creation completed successfully")
 		} catch (error) {
-			console.error("[FordLLM] Error in createMessage:", error)
 			const errorMessage = error instanceof Error ? error.message : String(error)
-			console.error("[FordLLM] Error message:", errorMessage)
 			yield {
 				type: "error",
 				error: errorMessage,
