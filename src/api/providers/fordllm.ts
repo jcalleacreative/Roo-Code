@@ -70,6 +70,11 @@ interface FordStreamChunk {
 	created: number
 	model: string
 	object: string
+	usage?: {
+		completion_tokens: number
+		prompt_tokens: number
+		total_tokens: number
+	}
 }
 
 export class FordLlmHandler extends BaseProvider implements SingleCompletionHandler {
@@ -616,6 +621,9 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 			if (useStreaming) {
 				console.log("[FordLLM] createMessage: Using streaming mode")
 
+				// Track usage info from streaming chunks
+				let finalUsage: { inputTokens: number; outputTokens: number } | null = null
+
 				// Use streaming API
 				for await (const chunk of this.callFordAiStreaming(systemPrompt, messages)) {
 					const deltaContent = chunk.choices?.[0]?.delta?.content
@@ -631,6 +639,28 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 							text: deltaContent,
 						}
 					}
+
+					// Capture usage info if present in the chunk
+					if (chunk.usage) {
+						finalUsage = {
+							inputTokens: chunk.usage.prompt_tokens || 0,
+							outputTokens: chunk.usage.completion_tokens || 0,
+						}
+					}
+				}
+
+				// Always yield usage info at the end to signal completion
+				console.log(
+					"[FordLLM] createMessage: Yielding usage info - input:",
+					finalUsage?.inputTokens ?? 0,
+					"output:",
+					finalUsage?.outputTokens ?? 0,
+				)
+				yield {
+					type: "usage",
+					inputTokens: finalUsage?.inputTokens ?? 0,
+					outputTokens: finalUsage?.outputTokens ?? 0,
+					totalCost: 0,
 				}
 
 				console.log("[FordLLM] createMessage: Streaming completed successfully")
