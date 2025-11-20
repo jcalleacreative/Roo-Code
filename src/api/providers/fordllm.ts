@@ -9,11 +9,22 @@ import { ApiStream } from "../transform/stream"
 import { BaseProvider } from "./base-provider"
 import type { SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
 
+// Ford OAuth2 Configuration
 const FORD_DEFAULT_TOKEN_URL =
 	"https://login.microsoftonline.com/c990bb7a-51f4-439b-bd36-9c07fb1041c0/oauth2/v2.0/token"
-const FORD_DEFAULT_CHAT_URL = "https://api.pivpn.core.ford.com/fordllmapi/api/v1/chat/completions"
 const FORD_DEFAULT_SCOPE = "api://6af47983-2540-43ae-89ff-4b93bf4eeb33/.default"
-const FORD_DEFAULT_MODEL = "gemini-2.5-pro"
+
+// Ford API Endpoints
+const FORD_API_REGULAR = "https://api.pd01i.gcp.ford.com/fordllmapi/api/v1/chat/completions"
+const FORD_API_STREAMING = "https://fordllmstreaming.app.gcp.ford.com/api/v1/chat/completions"
+
+// Legacy endpoint (for reference)
+const FORD_API_LEGACY = "https://api.pd01i.gcp.ford.com/llm/api/chat"
+
+// Default configuration
+const FORD_DEFAULT_CHAT_URL = FORD_API_REGULAR // Use regular API by default
+const FORD_DEFAULT_MODEL = "fordllm-coding-model" // Use recommended alias for coding
+const FORD_DEFAULT_STREAMING = false // Disable streaming by default for initial testing
 
 // Maximum context size (conservative limit to avoid 413 errors)
 const MAX_CONTEXT_SIZE_BYTES = 100 * 1024 // 100KB

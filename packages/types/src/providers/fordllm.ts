@@ -3,9 +3,47 @@ import type { ModelInfo } from "../model.js"
 // Ford LLM models available through Ford's internal API
 export type FordLlmModelId = keyof typeof fordllmModels
 
-export const fordllmDefaultModelId: FordLlmModelId = "gemini-2.5-pro"
+export const fordllmDefaultModelId: FordLlmModelId = "fordllm-coding-model"
 
 export const fordllmModels = {
+	// Recommended Ford LLM Aliases (use these for best experience)
+	"fordllm-coding-model": {
+		maxTokens: 16_384,
+		contextWindow: 128_000,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsTemperature: true,
+		defaultTemperature: 1,
+		inputPrice: 0,
+		outputPrice: 0,
+		description: "Optimized for coding tasks",
+	},
+	"fordllm-reasoning-model": {
+		maxTokens: 65_536,
+		contextWindow: 1_048_576,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsReasoningEffort: ["low", "high"],
+		reasoningEffort: "low",
+		supportsTemperature: true,
+		defaultTemperature: 1,
+		inputPrice: 0,
+		outputPrice: 0,
+		description: "Best for complex reasoning tasks",
+	},
+	"fordllm-openai-mini-model": {
+		maxTokens: 16_384,
+		contextWindow: 128_000,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsTemperature: true,
+		defaultTemperature: 1,
+		inputPrice: 0,
+		outputPrice: 0,
+		description: "Fast general-purpose model",
+	},
+
+	// Gemini Models
 	"gemini-2.5-pro": {
 		maxTokens: 65_536,
 		contextWindow: 1_048_576,
@@ -15,7 +53,17 @@ export const fordllmModels = {
 		reasoningEffort: "low",
 		supportsTemperature: true,
 		defaultTemperature: 1,
-		inputPrice: 0, // Internal Ford API - no direct cost
+		inputPrice: 0,
+		outputPrice: 0,
+	},
+	"gemini-2.5-flash": {
+		maxTokens: 8192,
+		contextWindow: 1_048_576,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsTemperature: true,
+		defaultTemperature: 1,
+		inputPrice: 0,
 		outputPrice: 0,
 	},
 	"gemini-2.0-flash-exp": {
@@ -25,6 +73,16 @@ export const fordllmModels = {
 		supportsPromptCache: true,
 		supportsReasoningEffort: ["low", "high"],
 		reasoningEffort: "low",
+		supportsTemperature: true,
+		defaultTemperature: 1,
+		inputPrice: 0,
+		outputPrice: 0,
+	},
+	"gemini-2.0-flash-001": {
+		maxTokens: 8192,
+		contextWindow: 1_048_576,
+		supportsImages: true,
+		supportsPromptCache: true,
 		supportsTemperature: true,
 		defaultTemperature: 1,
 		inputPrice: 0,
@@ -43,6 +101,92 @@ export const fordllmModels = {
 	"gemini-1.5-flash": {
 		maxTokens: 8192,
 		contextWindow: 1_048_576,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsTemperature: true,
+		defaultTemperature: 1,
+		inputPrice: 0,
+		outputPrice: 0,
+	},
+
+	// GPT Models
+	"gpt-5-2025-08-07": {
+		maxTokens: 16_384,
+		contextWindow: 128_000,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsTemperature: true,
+		defaultTemperature: 1,
+		inputPrice: 0,
+		outputPrice: 0,
+	},
+	"gpt-5-mini-2025-08-07": {
+		maxTokens: 16_384,
+		contextWindow: 128_000,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsTemperature: true,
+		defaultTemperature: 1,
+		inputPrice: 0,
+		outputPrice: 0,
+	},
+	"gpt-4.1-2025-04-14": {
+		maxTokens: 16_384,
+		contextWindow: 128_000,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsTemperature: true,
+		defaultTemperature: 1,
+		inputPrice: 0,
+		outputPrice: 0,
+	},
+	"gpt-4.1-mini-2025-04-14": {
+		maxTokens: 16_384,
+		contextWindow: 128_000,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsTemperature: true,
+		defaultTemperature: 1,
+		inputPrice: 0,
+		outputPrice: 0,
+	},
+	"o4-mini-2025-04-16": {
+		maxTokens: 100_000,
+		contextWindow: 128_000,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsReasoningEffort: ["low", "medium", "high"],
+		reasoningEffort: "medium",
+		supportsTemperature: true,
+		defaultTemperature: 1,
+		inputPrice: 0,
+		outputPrice: 0,
+	},
+
+	// Claude Models
+	"claude-sonnet-4": {
+		maxTokens: 8192,
+		contextWindow: 200_000,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsTemperature: true,
+		defaultTemperature: 1,
+		inputPrice: 0,
+		outputPrice: 0,
+	},
+	"claude-3.7-sonnet": {
+		maxTokens: 8192,
+		contextWindow: 200_000,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsTemperature: true,
+		defaultTemperature: 1,
+		inputPrice: 0,
+		outputPrice: 0,
+	},
+	"claude-3.5-sonnet": {
+		maxTokens: 8192,
+		contextWindow: 200_000,
 		supportsImages: true,
 		supportsPromptCache: true,
 		supportsTemperature: true,
