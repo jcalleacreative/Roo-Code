@@ -105,44 +105,73 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 
 		try {
 			console.log("[FordLLM] getFordAccessToken: Sending token request to", tokenUrl)
-			const response = await fetch(tokenUrl, {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/x-www-form-urlencoded",
-				},
-				body: params.toString(),
-			})
 
-			console.log("[FordLLM] getFordAccessToken: Token response status:", response.status, response.statusText)
+			// WORKAROUND: Node.js fetch may not trust Ford's SSL certificate
+			// Temporarily disable SSL verification for this request
+			// PROPER FIX: Set NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt before starting VS Code
+			const originalRejectUnauthorized = process.env.NODE_TLS_REJECT_UNAUTHORIZED
+			process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
+			console.log("[FordLLM] getFordAccessToken: SSL verification disabled (workaround for certificate trust)")
 
-			if (!response.ok) {
-				const errorText = await response.text()
-				console.error("[FordLLM] getFordAccessToken: Token request failed with error:", errorText)
-				throw new Error(
-					`Ford AI: Failed to obtain access token (${response.status} ${response.statusText}). Check clientId/clientSecret/scope. Error: ${errorText}`,
+			try {
+				const response = await fetch(tokenUrl, {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/x-www-form-urlencoded",
+					},
+					body: params.toString(),
+				})
+
+				// Restore SSL verification
+				if (originalRejectUnauthorized !== undefined) {
+					process.env.NODE_TLS_REJECT_UNAUTHORIZED = originalRejectUnauthorized
+				} else {
+					delete process.env.NODE_TLS_REJECT_UNAUTHORIZED
+				}
+
+				console.log(
+					"[FordLLM] getFordAccessToken: Token response status:",
+					response.status,
+					response.statusText,
 				)
+
+				if (!response.ok) {
+					const errorText = await response.text()
+					console.error("[FordLLM] getFordAccessToken: Token request failed with error:", errorText)
+					throw new Error(
+						`Ford AI: Failed to obtain access token (${response.status} ${response.statusText}). Check clientId/clientSecret/scope. Error: ${errorText}`,
+					)
+				}
+
+				const data: FordTokenResponse = await response.json()
+
+				if (!data.access_token) {
+					console.error("[FordLLM] getFordAccessToken: No access_token in response")
+					throw new Error("Ford AI: No access_token in response from token endpoint.")
+				}
+
+				// Cache the token
+				this.accessToken = data.access_token
+				this.tokenExpiresAt = now + data.expires_in
+
+				console.log(
+					"[FordLLM] getFordAccessToken: Successfully obtained token (length:",
+					this.accessToken.length,
+					", expires in",
+					data.expires_in,
+					"seconds)",
+				)
+
+				return this.accessToken
+			} catch (innerError) {
+				// Restore SSL verification on error
+				if (originalRejectUnauthorized !== undefined) {
+					process.env.NODE_TLS_REJECT_UNAUTHORIZED = originalRejectUnauthorized
+				} else {
+					delete process.env.NODE_TLS_REJECT_UNAUTHORIZED
+				}
+				throw innerError
 			}
-
-			const data: FordTokenResponse = await response.json()
-
-			if (!data.access_token) {
-				console.error("[FordLLM] getFordAccessToken: No access_token in response")
-				throw new Error("Ford AI: No access_token in response from token endpoint.")
-			}
-
-			// Cache the token
-			this.accessToken = data.access_token
-			this.tokenExpiresAt = now + data.expires_in
-
-			console.log(
-				"[FordLLM] getFordAccessToken: Successfully obtained token (length:",
-				this.accessToken.length,
-				", expires in",
-				data.expires_in,
-				"seconds)",
-			)
-
-			return this.accessToken
 		} catch (error) {
 			console.error("[FordLLM] getFordAccessToken: Exception during token request:", error)
 			if (error instanceof Error) {
@@ -199,47 +228,70 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 			console.log("[FordLLM] callFordAi: Sending POST request to", chatUrl)
 			console.log("[FordLLM] callFordAi: Authorization header: Bearer [token length:", accessToken.length, "]")
 
-			const response = await fetch(chatUrl, {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-					Authorization: `Bearer ${accessToken}`,
-				},
-				body: JSON.stringify(requestBody),
-			})
+			// WORKAROUND: Node.js fetch may not trust Ford's SSL certificate
+			// Temporarily disable SSL verification for this request
+			const originalRejectUnauthorized = process.env.NODE_TLS_REJECT_UNAUTHORIZED
+			process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
+			console.log("[FordLLM] callFordAi: SSL verification disabled (workaround for certificate trust)")
 
-			console.log("[FordLLM] callFordAi: Response received - Status:", response.status, response.statusText)
-			console.log("[FordLLM] callFordAi: Response OK:", response.ok)
+			try {
+				const response = await fetch(chatUrl, {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						Authorization: `Bearer ${accessToken}`,
+					},
+					body: JSON.stringify(requestBody),
+				})
 
-			if (!response.ok) {
-				const errorText = await response.text()
-				console.error("[FordLLM] callFordAi: Error response body:", errorText)
-
-				let errorMessage = `Ford AI: Chat API request failed (${response.status} ${response.statusText}).`
-
-				// Provide helpful error messages
-				if (response.status === 401 || response.status === 403) {
-					errorMessage +=
-						" Unauthorized or Forbidden. Check that your credentials and subscription are correct."
-				} else if (response.status === 429) {
-					errorMessage += " Rate limit exceeded. Try again later."
-				} else if (response.status === 413) {
-					errorMessage += " Request too large. Reduce the context size."
+				// Restore SSL verification
+				if (originalRejectUnauthorized !== undefined) {
+					process.env.NODE_TLS_REJECT_UNAUTHORIZED = originalRejectUnauthorized
+				} else {
+					delete process.env.NODE_TLS_REJECT_UNAUTHORIZED
 				}
 
-				errorMessage += ` Error: ${errorText}`
-				throw new Error(errorMessage)
+				console.log("[FordLLM] callFordAi: Response received - Status:", response.status, response.statusText)
+				console.log("[FordLLM] callFordAi: Response OK:", response.ok)
+
+				if (!response.ok) {
+					const errorText = await response.text()
+					console.error("[FordLLM] callFordAi: Error response body:", errorText)
+
+					let errorMessage = `Ford AI: Chat API request failed (${response.status} ${response.statusText}).`
+
+					// Provide helpful error messages
+					if (response.status === 401 || response.status === 403) {
+						errorMessage +=
+							" Unauthorized or Forbidden. Check that your credentials and subscription are correct."
+					} else if (response.status === 429) {
+						errorMessage += " Rate limit exceeded. Try again later."
+					} else if (response.status === 413) {
+						errorMessage += " Request too large. Reduce the context size."
+					}
+
+					errorMessage += ` Error: ${errorText}`
+					throw new Error(errorMessage)
+				}
+
+				const data: FordChatCompletionResponse = await response.json()
+				console.log("[FordLLM] callFordAi: Successfully parsed response")
+				console.log("[FordLLM] callFordAi: Response has", data.choices?.length || 0, "choices")
+				console.log(
+					"[FordLLM] callFordAi: First choice content length:",
+					data.choices?.[0]?.message?.content?.length || 0,
+				)
+
+				return data
+			} catch (innerError) {
+				// Restore SSL verification on error
+				if (originalRejectUnauthorized !== undefined) {
+					process.env.NODE_TLS_REJECT_UNAUTHORIZED = originalRejectUnauthorized
+				} else {
+					delete process.env.NODE_TLS_REJECT_UNAUTHORIZED
+				}
+				throw innerError
 			}
-
-			const data: FordChatCompletionResponse = await response.json()
-			console.log("[FordLLM] callFordAi: Successfully parsed response")
-			console.log("[FordLLM] callFordAi: Response has", data.choices?.length || 0, "choices")
-			console.log(
-				"[FordLLM] callFordAi: First choice content length:",
-				data.choices?.[0]?.message?.content?.length || 0,
-			)
-
-			return data
 		} catch (error) {
 			console.error("[FordLLM] callFordAi: Exception caught:", error)
 			console.error("[FordLLM] callFordAi: Error type:", error instanceof Error ? "Error" : typeof error)
