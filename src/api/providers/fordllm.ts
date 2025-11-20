@@ -530,12 +530,17 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 			res.on("data", (chunk: Buffer) => {
 				buffer += chunk.toString()
 
+				// Log raw SSE data for debugging
+				console.log("[FordLLM] callFordAiStreaming: Raw SSE data received (length:", chunk.length, ")")
+
 				// Process complete SSE messages (ending with \n\n)
 				const sseMessages = buffer.split("\n\n")
 				buffer = sseMessages.pop() || "" // Keep incomplete message in buffer
 
 				for (const sseMessage of sseMessages) {
 					if (!sseMessage.trim()) continue
+
+					console.log("[FordLLM] callFordAiStreaming: Processing SSE message:", sseMessage.substring(0, 200))
 
 					// Parse SSE format: "data: {...json...}"
 					const lines = sseMessage.split("\n")
@@ -556,6 +561,12 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 								console.log(
 									"[FordLLM] callFordAiStreaming: Received chunk with delta content:",
 									chunk.choices?.[0]?.delta?.content?.length || 0,
+								)
+								console.log(
+									"[FordLLM] callFordAiStreaming: Chunk details - finish_reason:",
+									chunk.choices?.[0]?.finish_reason,
+									", role:",
+									chunk.choices?.[0]?.delta?.role,
 								)
 								enqueue(chunk)
 							} catch (parseError) {
@@ -623,12 +634,14 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 
 				// Track usage info from streaming chunks
 				let finalUsage: { inputTokens: number; outputTokens: number } | null = null
+				let hasReceivedContent = false
 
 				// Use streaming API
 				for await (const chunk of this.callFordAiStreaming(systemPrompt, messages)) {
 					const deltaContent = chunk.choices?.[0]?.delta?.content
 
 					if (deltaContent) {
+						hasReceivedContent = true
 						console.log(
 							"[FordLLM] createMessage: Yielding streaming text chunk (length:",
 							deltaContent.length,
@@ -647,6 +660,13 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 							outputTokens: chunk.usage.completion_tokens || 0,
 						}
 					}
+				}
+
+				// Warn if no content was received
+				if (!hasReceivedContent) {
+					console.warn(
+						"[FordLLM] createMessage: WARNING - Stream completed without receiving any text content!",
+					)
 				}
 
 				// Always yield usage info at the end to signal completion
