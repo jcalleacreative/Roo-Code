@@ -174,7 +174,24 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 			}
 		} catch (error) {
 			console.error("[FordLLM] getFordAccessToken: Exception during token request:", error)
+
+			// Log detailed error information to diagnose network issues
 			if (error instanceof Error) {
+				console.error("[FordLLM] getFordAccessToken: Error name:", (error as any).name)
+				console.error("[FordLLM] getFordAccessToken: Error code:", (error as any).code)
+				console.error("[FordLLM] getFordAccessToken: Error syscall:", (error as any).syscall)
+				console.error("[FordLLM] getFordAccessToken: Error cause:", (error as any).cause)
+
+				// If there's a cause, log its details too
+				if ((error as any).cause) {
+					const cause = (error as any).cause
+					console.error("[FordLLM] getFordAccessToken: Cause type:", typeof cause)
+					console.error("[FordLLM] getFordAccessToken: Cause message:", cause.message)
+					console.error("[FordLLM] getFordAccessToken: Cause code:", cause.code)
+					console.error("[FordLLM] getFordAccessToken: Cause syscall:", cause.syscall)
+					console.error("[FordLLM] getFordAccessToken: Cause errno:", cause.errno)
+				}
+
 				throw new Error(`Ford AI: OAuth2 token request failed: ${error.message}`)
 			}
 			throw error
@@ -299,7 +316,26 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 				"[FordLLM] callFordAi: Error message:",
 				error instanceof Error ? error.message : String(error),
 			)
+
+			// Log detailed error information to diagnose network issues
 			if (error instanceof Error) {
+				console.error("[FordLLM] callFordAi: Error name:", (error as any).name)
+				console.error("[FordLLM] callFordAi: Error code:", (error as any).code)
+				console.error("[FordLLM] callFordAi: Error syscall:", (error as any).syscall)
+				console.error("[FordLLM] callFordAi: Error cause:", (error as any).cause)
+
+				// If there's a cause, log its details too
+				if ((error as any).cause) {
+					const cause = (error as any).cause
+					console.error("[FordLLM] callFordAi: Cause type:", typeof cause)
+					console.error("[FordLLM] callFordAi: Cause message:", cause.message)
+					console.error("[FordLLM] callFordAi: Cause code:", cause.code)
+					console.error("[FordLLM] callFordAi: Cause syscall:", cause.syscall)
+					console.error("[FordLLM] callFordAi: Cause errno:", cause.errno)
+					console.error("[FordLLM] callFordAi: Cause address:", cause.address)
+					console.error("[FordLLM] callFordAi: Cause port:", cause.port)
+				}
+
 				throw new Error(`Ford AI: Chat request failed: ${error.message}`)
 			}
 			throw error
