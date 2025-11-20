@@ -27,7 +27,8 @@ const FORD_DEFAULT_MODEL = "fordllm-coding-model" // Use recommended alias for c
 const FORD_DEFAULT_STREAMING = false // Disable streaming by default for initial testing
 
 // Maximum context size (conservative limit to avoid 413 errors)
-const MAX_CONTEXT_SIZE_BYTES = 100 * 1024 // 100KB
+// Models support 128K-1M tokens. ~1 token = 4 chars, so 128K tokens ≈ 512KB text + JSON overhead
+const MAX_CONTEXT_SIZE_BYTES = 10 * 1024 * 1024 // 10MB
 
 interface FordTokenResponse {
 	access_token: string
