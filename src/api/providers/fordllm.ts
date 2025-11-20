@@ -1,4 +1,5 @@
 import { Anthropic } from "@anthropic-ai/sdk"
+import https from "node:https"
 import type { ModelInfo } from "@roo-code/types"
 
 import type { ApiHandlerOptions } from "../../shared/api"
@@ -242,73 +243,90 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 		}
 
 		try {
-			console.log("[FordLLM] callFordAi: Sending POST request to", chatUrl)
-			console.log("[FordLLM] callFordAi: Authorization header: Bearer [token length:", accessToken.length, "]")
+			// WORKAROUND: Use https module instead of fetch to bypass undici's SSL handling
+			// This allows us to directly control SSL certificate verification
+			const data: FordChatCompletionResponse = await new Promise((resolve, reject) => {
+				console.log("[FordLLM] callFordAi: Sending POST request to", chatUrl)
+				console.log(
+					"[FordLLM] callFordAi: Authorization header: Bearer [token length:",
+					accessToken.length,
+					"]",
+				)
+				console.log("[FordLLM] callFordAi: Using https module with rejectUnauthorized: false")
 
-			// WORKAROUND: Node.js fetch may not trust Ford's SSL certificate
-			// Temporarily disable SSL verification for this request
-			const originalRejectUnauthorized = process.env.NODE_TLS_REJECT_UNAUTHORIZED
-			process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
-			console.log("[FordLLM] callFordAi: SSL verification disabled (workaround for certificate trust)")
+				const url = new URL(chatUrl)
+				const postData = JSON.stringify(requestBody)
 
-			try {
-				const response = await fetch(chatUrl, {
+				const options: https.RequestOptions = {
+					hostname: url.hostname,
+					port: url.port || 443,
+					path: url.pathname + url.search,
 					method: "POST",
 					headers: {
 						"Content-Type": "application/json",
+						"Content-Length": Buffer.byteLength(postData),
 						Authorization: `Bearer ${accessToken}`,
 					},
-					body: JSON.stringify(requestBody),
+					// Disable SSL certificate verification (workaround for Ford internal cert)
+					rejectUnauthorized: false,
+				}
+
+				const req = https.request(options, (res) => {
+					console.log("[FordLLM] callFordAi: Response received - Status:", res.statusCode, res.statusMessage)
+
+					let responseBody = ""
+
+					res.on("data", (chunk) => {
+						responseBody += chunk
+					})
+
+					res.on("end", () => {
+						if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
+							console.error("[FordLLM] callFordAi: Error response body:", responseBody)
+
+							let errorMessage = `Ford AI: Chat API request failed (${res.statusCode} ${res.statusMessage}).`
+
+							// Provide helpful error messages
+							if (res.statusCode === 401 || res.statusCode === 403) {
+								errorMessage +=
+									" Unauthorized or Forbidden. Check that your credentials and subscription are correct."
+							} else if (res.statusCode === 429) {
+								errorMessage += " Rate limit exceeded. Try again later."
+							} else if (res.statusCode === 413) {
+								errorMessage += " Request too large. Reduce the context size."
+							}
+
+							errorMessage += ` Error: ${responseBody}`
+							reject(new Error(errorMessage))
+							return
+						}
+
+						try {
+							const data: FordChatCompletionResponse = JSON.parse(responseBody)
+							console.log("[FordLLM] callFordAi: Successfully parsed response")
+							console.log("[FordLLM] callFordAi: Response has", data.choices?.length || 0, "choices")
+							console.log(
+								"[FordLLM] callFordAi: First choice content length:",
+								data.choices?.[0]?.message?.content?.length || 0,
+							)
+							resolve(data)
+						} catch (parseError) {
+							console.error("[FordLLM] callFordAi: JSON parse error:", parseError)
+							reject(new Error(`Ford AI: Failed to parse response: ${parseError}`))
+						}
+					})
 				})
 
-				// Restore SSL verification
-				if (originalRejectUnauthorized !== undefined) {
-					process.env.NODE_TLS_REJECT_UNAUTHORIZED = originalRejectUnauthorized
-				} else {
-					delete process.env.NODE_TLS_REJECT_UNAUTHORIZED
-				}
+				req.on("error", (error) => {
+					console.error("[FordLLM] callFordAi: Request error:", error)
+					reject(error)
+				})
 
-				console.log("[FordLLM] callFordAi: Response received - Status:", response.status, response.statusText)
-				console.log("[FordLLM] callFordAi: Response OK:", response.ok)
+				req.write(postData)
+				req.end()
+			})
 
-				if (!response.ok) {
-					const errorText = await response.text()
-					console.error("[FordLLM] callFordAi: Error response body:", errorText)
-
-					let errorMessage = `Ford AI: Chat API request failed (${response.status} ${response.statusText}).`
-
-					// Provide helpful error messages
-					if (response.status === 401 || response.status === 403) {
-						errorMessage +=
-							" Unauthorized or Forbidden. Check that your credentials and subscription are correct."
-					} else if (response.status === 429) {
-						errorMessage += " Rate limit exceeded. Try again later."
-					} else if (response.status === 413) {
-						errorMessage += " Request too large. Reduce the context size."
-					}
-
-					errorMessage += ` Error: ${errorText}`
-					throw new Error(errorMessage)
-				}
-
-				const data: FordChatCompletionResponse = await response.json()
-				console.log("[FordLLM] callFordAi: Successfully parsed response")
-				console.log("[FordLLM] callFordAi: Response has", data.choices?.length || 0, "choices")
-				console.log(
-					"[FordLLM] callFordAi: First choice content length:",
-					data.choices?.[0]?.message?.content?.length || 0,
-				)
-
-				return data
-			} catch (innerError) {
-				// Restore SSL verification on error
-				if (originalRejectUnauthorized !== undefined) {
-					process.env.NODE_TLS_REJECT_UNAUTHORIZED = originalRejectUnauthorized
-				} else {
-					delete process.env.NODE_TLS_REJECT_UNAUTHORIZED
-				}
-				throw innerError
-			}
+			return data
 		} catch (error) {
 			console.error("[FordLLM] callFordAi: Exception caught:", error)
 			console.error("[FordLLM] callFordAi: Error type:", error instanceof Error ? "Error" : typeof error)
