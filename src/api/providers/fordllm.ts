@@ -252,7 +252,7 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 					accessToken.length,
 					"]",
 				)
-				console.log("[FordLLM] callFordAi: Using https module with rejectUnauthorized: false")
+				console.log("[FordLLM] callFordAi: Using https module with rejectUnauthorized: false and proxy bypass")
 
 				const url = new URL(chatUrl)
 				const postData = JSON.stringify(requestBody)
@@ -269,6 +269,9 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 					},
 					// Disable SSL certificate verification (workaround for Ford internal cert)
 					rejectUnauthorized: false,
+					// Bypass corporate proxy for internal Ford domains
+					// This prevents "DNS_FAIL" errors from proxy trying to resolve internal domains
+					agent: false,
 				}
 
 				const req = https.request(options, (res) => {
