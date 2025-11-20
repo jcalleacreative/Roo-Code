@@ -15,7 +15,7 @@ const FORD_DEFAULT_TOKEN_URL =
 const FORD_DEFAULT_SCOPE = "api://6af47983-2540-43ae-89ff-4b93bf4eeb33/.default"
 
 // Ford API Endpoints
-const FORD_API_REGULAR = "https://api.pd01i.gcp.ford.com/fordllmapi/api/v1/chat/completions"
+const FORD_API_REGULAR = "https://api.pivpn.core.ford.com/fordllmapi/api/v1/chat/completions"
 const FORD_API_STREAMING = "https://fordllmstreaming.app.gcp.ford.com/api/v1/chat/completions"
 
 // Legacy endpoint (for reference)
@@ -54,6 +54,21 @@ interface FordChatCompletionResponse {
 		prompt_tokens: number
 		total_tokens: number
 	}
+}
+
+interface FordStreamChunk {
+	id: string
+	choices: Array<{
+		delta: {
+			role?: string
+			content?: string
+		}
+		finish_reason: string | null
+		index: number
+	}>
+	created: number
+	model: string
+	object: string
 }
 
 export class FordLlmHandler extends BaseProvider implements SingleCompletionHandler {
@@ -374,6 +389,218 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 		}
 	}
 
+	/**
+	 * Call Ford LLM chat completions endpoint with streaming.
+	 * Parses Server-Sent Events (SSE) format.
+	 */
+	private async *callFordAiStreaming(
+		systemPrompt: string,
+		messages: Anthropic.Messages.MessageParam[],
+	): AsyncGenerator<FordStreamChunk, void, unknown> {
+		console.log("[FordLLM] callFordAiStreaming: Starting streaming chat API call")
+		console.log("[FordLLM] callFordAiStreaming: System prompt length:", systemPrompt.length)
+		console.log("[FordLLM] callFordAiStreaming: Messages count:", messages.length)
+
+		const accessToken = await this.getFordAccessToken()
+		console.log("[FordLLM] callFordAiStreaming: Access token obtained, length:", accessToken.length)
+
+		// Determine which endpoint to use
+		const useStreaming = this.options.fordAiUseStreaming !== false // Default to true if not specified
+		const chatUrl = useStreaming ? FORD_API_STREAMING : this.options.fordAiChatUrl || FORD_DEFAULT_CHAT_URL
+		const modelName = this.options.fordAiModel || FORD_DEFAULT_MODEL
+
+		console.log("[FordLLM] callFordAiStreaming: Chat URL:", chatUrl)
+		console.log("[FordLLM] callFordAiStreaming: Model:", modelName)
+		console.log("[FordLLM] callFordAiStreaming: Streaming enabled:", useStreaming)
+
+		// Convert Anthropic messages to OpenAI format
+		const openAiMessages = [
+			{ role: "system" as const, content: systemPrompt },
+			...convertToOpenAiMessages(messages),
+		]
+
+		console.log("[FordLLM] callFordAiStreaming: Converted to", openAiMessages.length, "OpenAI messages")
+
+		// Context size guardrail
+		const requestBody = {
+			model: modelName,
+			messages: openAiMessages,
+			stream: true, // Enable streaming
+		}
+		const requestSize = JSON.stringify(requestBody).length
+
+		console.log("[FordLLM] callFordAiStreaming: Request body size:", requestSize, "bytes")
+
+		if (requestSize > MAX_CONTEXT_SIZE_BYTES) {
+			throw new Error(
+				`Ford AI: Context too large (${Math.round(requestSize / 1024)}KB). Try fewer files or a smaller prompt. Max: ${Math.round(MAX_CONTEXT_SIZE_BYTES / 1024)}KB.`,
+			)
+		}
+
+		// Use a queue to bridge between callback-based streaming and async generator
+		const chunkQueue: (FordStreamChunk | Error | null)[] = []
+		let resolveNext: ((value: IteratorResult<FordStreamChunk>) => void) | null = null
+		let streamComplete = false
+
+		const enqueue = (item: FordStreamChunk | Error | null) => {
+			if (resolveNext) {
+				// Someone is waiting, deliver immediately
+				if (item === null) {
+					resolveNext({ done: true, value: undefined })
+				} else if (item instanceof Error) {
+					throw item
+				} else {
+					resolveNext({ done: false, value: item })
+				}
+				resolveNext = null
+			} else {
+				// Queue for later
+				chunkQueue.push(item)
+			}
+		}
+
+		const dequeue = (): Promise<IteratorResult<FordStreamChunk>> => {
+			return new Promise((resolve) => {
+				if (chunkQueue.length > 0) {
+					const item = chunkQueue.shift()!
+					if (item === null) {
+						resolve({ done: true, value: undefined })
+					} else if (item instanceof Error) {
+						throw item
+					} else {
+						resolve({ done: false, value: item })
+					}
+				} else if (streamComplete) {
+					resolve({ done: true, value: undefined })
+				} else {
+					resolveNext = resolve
+				}
+			})
+		}
+
+		// Start the streaming request
+		const url = new URL(chatUrl)
+		const postData = JSON.stringify(requestBody)
+
+		const options: https.RequestOptions = {
+			hostname: url.hostname,
+			port: url.port || 443,
+			path: url.pathname + url.search,
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				"Content-Length": Buffer.byteLength(postData),
+				Authorization: `Bearer ${accessToken}`,
+				Accept: "text/event-stream", // SSE format
+			},
+			rejectUnauthorized: false, // Handle Ford's internal SSL certs
+			agent: false, // Bypass corporate proxy
+		}
+
+		console.log("[FordLLM] callFordAiStreaming: Sending POST request to", chatUrl)
+
+		const req = https.request(options, (res) => {
+			console.log("[FordLLM] callFordAiStreaming: Response received - Status:", res.statusCode, res.statusMessage)
+
+			if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
+				let errorBody = ""
+				res.on("data", (chunk) => {
+					errorBody += chunk
+				})
+				res.on("end", () => {
+					console.error("[FordLLM] callFordAiStreaming: Error response body:", errorBody)
+					enqueue(
+						new Error(
+							`Ford AI: Streaming request failed (${res.statusCode} ${res.statusMessage}). Error: ${errorBody}`,
+						),
+					)
+					streamComplete = true
+				})
+				return
+			}
+
+			let buffer = ""
+
+			res.on("data", (chunk: Buffer) => {
+				buffer += chunk.toString()
+
+				// Process complete SSE messages (ending with \n\n)
+				const sseMessages = buffer.split("\n\n")
+				buffer = sseMessages.pop() || "" // Keep incomplete message in buffer
+
+				for (const sseMessage of sseMessages) {
+					if (!sseMessage.trim()) continue
+
+					// Parse SSE format: "data: {...json...}"
+					const lines = sseMessage.split("\n")
+					for (const line of lines) {
+						if (line.startsWith("data: ")) {
+							const data = line.slice(6) // Remove "data: " prefix
+
+							// Check for [DONE] marker
+							if (data.trim() === "[DONE]") {
+								console.log("[FordLLM] callFordAiStreaming: Stream complete")
+								streamComplete = true
+								enqueue(null)
+								return
+							}
+
+							try {
+								const chunk: FordStreamChunk = JSON.parse(data)
+								console.log(
+									"[FordLLM] callFordAiStreaming: Received chunk with delta content:",
+									chunk.choices?.[0]?.delta?.content?.length || 0,
+								)
+								enqueue(chunk)
+							} catch (parseError) {
+								console.error(
+									"[FordLLM] callFordAiStreaming: Failed to parse SSE data:",
+									data,
+									parseError,
+								)
+							}
+						}
+					}
+				}
+			})
+
+			res.on("end", () => {
+				console.log("[FordLLM] callFordAiStreaming: Stream ended")
+				streamComplete = true
+				enqueue(null)
+			})
+
+			res.on("error", (error) => {
+				console.error("[FordLLM] callFordAiStreaming: Stream error:", error)
+				enqueue(error)
+				streamComplete = true
+			})
+		})
+
+		req.on("error", (error) => {
+			console.error("[FordLLM] callFordAiStreaming: Request error:", error)
+			enqueue(error)
+			streamComplete = true
+		})
+
+		req.write(postData)
+		req.end()
+
+		// Yield chunks as they arrive
+		try {
+			while (true) {
+				const result = await dequeue()
+				if (result.done) break
+				yield result.value
+			}
+		} catch (error) {
+			console.error("[FordLLM] callFordAiStreaming: Exception caught:", error)
+			throw new Error(
+				`Ford AI: Streaming request failed: ${error instanceof Error ? error.message : String(error)}`,
+			)
+		}
+	}
+
 	override async *createMessage(
 		systemPrompt: string,
 		messages: Anthropic.Messages.MessageParam[],
@@ -382,42 +609,70 @@ export class FordLlmHandler extends BaseProvider implements SingleCompletionHand
 		try {
 			console.log("[FordLLM] createMessage: Called with", messages.length, "messages")
 
-			// Call Ford AI (non-streaming)
-			const response = await this.callFordAi(systemPrompt, messages)
+			// Check if streaming is enabled
+			const useStreaming = this.options.fordAiUseStreaming === true
 
-			// Extract the assistant's reply
-			const assistantMessage = response.choices?.[0]?.message?.content
+			if (useStreaming) {
+				console.log("[FordLLM] createMessage: Using streaming mode")
 
-			if (!assistantMessage) {
-				console.error("[FordLLM] createMessage: No assistant message in response")
-				throw new Error("Ford AI: No message content in response.")
-			}
+				// Use streaming API
+				for await (const chunk of this.callFordAiStreaming(systemPrompt, messages)) {
+					const deltaContent = chunk.choices?.[0]?.delta?.content
 
-			console.log("[FordLLM] createMessage: Yielding text response (length:", assistantMessage.length, ")")
-
-			// Yield the full text as a single chunk
-			yield {
-				type: "text",
-				text: assistantMessage,
-			}
-
-			// Yield usage information if available
-			if (response.usage) {
-				console.log(
-					"[FordLLM] createMessage: Yielding usage info - input:",
-					response.usage.prompt_tokens,
-					"output:",
-					response.usage.completion_tokens,
-				)
-				yield {
-					type: "usage",
-					inputTokens: response.usage.prompt_tokens || 0,
-					outputTokens: response.usage.completion_tokens || 0,
-					totalCost: 0, // Ford API doesn't provide cost info
+					if (deltaContent) {
+						console.log(
+							"[FordLLM] createMessage: Yielding streaming text chunk (length:",
+							deltaContent.length,
+							")",
+						)
+						yield {
+							type: "text",
+							text: deltaContent,
+						}
+					}
 				}
-			}
 
-			console.log("[FordLLM] createMessage: Completed successfully")
+				console.log("[FordLLM] createMessage: Streaming completed successfully")
+			} else {
+				console.log("[FordLLM] createMessage: Using non-streaming mode")
+
+				// Call Ford AI (non-streaming)
+				const response = await this.callFordAi(systemPrompt, messages)
+
+				// Extract the assistant's reply
+				const assistantMessage = response.choices?.[0]?.message?.content
+
+				if (!assistantMessage) {
+					console.error("[FordLLM] createMessage: No assistant message in response")
+					throw new Error("Ford AI: No message content in response.")
+				}
+
+				console.log("[FordLLM] createMessage: Yielding text response (length:", assistantMessage.length, ")")
+
+				// Yield the full text as a single chunk
+				yield {
+					type: "text",
+					text: assistantMessage,
+				}
+
+				// Yield usage information if available
+				if (response.usage) {
+					console.log(
+						"[FordLLM] createMessage: Yielding usage info - input:",
+						response.usage.prompt_tokens,
+						"output:",
+						response.usage.completion_tokens,
+					)
+					yield {
+						type: "usage",
+						inputTokens: response.usage.prompt_tokens || 0,
+						outputTokens: response.usage.completion_tokens || 0,
+						totalCost: 0, // Ford API doesn't provide cost info
+					}
+				}
+
+				console.log("[FordLLM] createMessage: Completed successfully")
+			}
 		} catch (error) {
 			console.error("[FordLLM] createMessage: Error occurred:", error)
 			const errorMessage = error instanceof Error ? error.message : String(error)

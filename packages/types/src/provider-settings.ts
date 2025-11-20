@@ -415,6 +415,7 @@ const fordllmSchema = baseProviderSettingsSchema.extend({
 	fordAiChatUrl: z.string().optional(),
 	fordAiScope: z.string().optional(),
 	fordAiModel: z.string().optional(),
+	fordAiUseStreaming: z.boolean().optional(),
 })
 
 const ioIntelligenceSchema = apiModelIdProviderModelSchema.extend({

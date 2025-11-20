@@ -1,5 +1,5 @@
 import { useCallback } from "react"
-import { VSCodeTextField } from "@vscode/webview-ui-toolkit/react"
+import { VSCodeTextField, VSCodeCheckbox } from "@vscode/webview-ui-toolkit/react"
 
 import type { ProviderSettings } from "@roo-code/types"
 
@@ -78,6 +78,21 @@ export const FordLLM = ({ apiConfiguration, setApiConfigurationField }: FordLLMP
 				className="w-full">
 				<label className="block font-medium mb-1">OAuth Scope (Optional)</label>
 			</VSCodeTextField>
+
+			<div className="mt-4">
+				<VSCodeCheckbox
+					checked={apiConfiguration?.fordAiUseStreaming ?? false}
+					onChange={(e) => {
+						const target = e.target as HTMLInputElement
+						setApiConfigurationField("fordAiUseStreaming", target.checked)
+					}}>
+					Enable Streaming
+				</VSCodeCheckbox>
+				<div className="text-sm text-vscode-descriptionForeground ml-6 mt-1">
+					When enabled, responses will stream in real-time for a better interactive experience. Uses the
+					streaming endpoint: fordllmstreaming.app.gcp.ford.com
+				</div>
+			</div>
 		</>
 	)
 }
